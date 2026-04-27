@@ -1,11 +1,12 @@
 import json
+import re
 import httpx
 import google.generativeai as genai
 
 from app.config import settings
 
 genai.configure(api_key=settings.gemini_api_key)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
 CATEGORIES = [
     "Alimentação", "Transporte", "Mercado", "Saúde",
@@ -17,22 +18,55 @@ CATEGORIES = [
 # 1. Classificar texto
 # ────────────────────────────────────────────
 
+
 async def classify_text(text: str) -> dict | None:
-    """
-    Extrai valor, categoria e descrição de uma mensagem de texto.
-    Retorna None se não identificar um gasto.
-    """
+    text = text.strip()
+
+    category_keywords = {
+        "Alimentação": ["pizza", "lanche", "restaurante", "café", "ifood", "padaria", "janta", "almoço"],
+        "Transporte": ["uber", "99", "taxi", "gasolina", "combustivel", "ônibus", "metro", "estacionamento"],
+        "Mercado": ["mercado", "supermercado", "feira", "hortifruti"],
+        "Saúde": ["farmacia", "remedio", "consulta", "exame", "hospital", "dentista"],
+        "Lazer": ["cinema", "show", "bar", "viagem", "netflix", "spotify"],
+        "Moradia": ["aluguel", "condominio", "luz", "agua", "internet", "gás", "gas"],
+        "Educação": ["curso", "faculdade", "livro", "escola", "mensalidade"],
+    }
+
+    def infer_category(description: str) -> str:
+        d = description.lower()
+        for category, keywords in category_keywords.items():
+            if any(k in d for k in keywords):
+                return category
+        return "Outros"
+
+    simple_patterns = [
+        r"^(?P<desc>[a-zA-ZÀ-ÿ][a-zA-ZÀ-ÿ\s\-]{1,50})\s+(?P<amount>\d+(?:[.,]\d{1,2})?)$",
+        r"^(?P<amount>\d+(?:[.,]\d{1,2})?)\s+(?P<desc>[a-zA-ZÀ-ÿ][a-zA-ZÀ-ÿ\s\-]{1,50})$",
+        r"^(?:gastei|paguei|comprei)\s+(?P<amount>\d+(?:[.,]\d{1,2})?)\s+(?:em|no|na|de)?\s*(?P<desc>.+)$",
+    ]
+
+    for pattern in simple_patterns:
+        match = re.match(pattern, text, flags=re.IGNORECASE)
+        if match:
+            desc = match.group("desc").strip()
+            amount = float(match.group("amount").replace(",", "."))
+            return {
+                "amount": amount,
+                "category": infer_category(desc),
+                "description": desc,
+            }
+
     prompt = f"""
 Você é um assistente financeiro pessoal. Analise a mensagem abaixo e extraia as informações de gasto.
 
 Mensagem: "{text}"
 
-Categorias disponíveis: {", ".join(CATEGORIES)}
+Categorias disponíveis: Alimentação, Transporte, Mercado, Saúde, Lazer, Moradia, Educação, Outros
 
 Responda APENAS com JSON válido, sem explicações, sem markdown:
 {{
   "is_expense": true ou false,
-  "amount": valor numérico em reais (ex: 50.00),
+  "amount": valor numérico em reais,
   "category": "uma das categorias acima",
   "description": "descrição curta do gasto em português"
 }}
@@ -41,22 +75,34 @@ Se não for um gasto claro, retorne {{"is_expense": false}}.
 """.strip()
 
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=prompt
+        )
+
         raw = response.text.strip().replace("```json", "").replace("```", "")
         data = json.loads(raw)
 
         if not data.get("is_expense"):
             return None
 
+        amount = data.get("amount")
+        if amount is None:
+            return None
+
+        category = data.get("category", "Outros")
+        if category not in CATEGORIES:
+            category = "Outros"
+
         return {
-            "amount": float(data["amount"]),
-            "category": data.get("category", "Outros"),
+            "amount": float(amount),
+            "category": category,
             "description": data.get("description", text[:60]),
         }
+
     except Exception as e:
         print(f"[Gemini classify_text error] {e}")
         return None
-
 
 # ────────────────────────────────────────────
 # 2. Transcrever áudio

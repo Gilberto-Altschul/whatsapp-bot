@@ -64,6 +64,9 @@ async def route_message(phone: str, msg_type: str, payload: str) -> str:
 async def _handle_text(phone: str, text: str) -> str:
     result = await classify_text(text)
 
+    print(f"Texto recebido: {text}")
+    print(f"Resultado da classificação: {result}")
+
     if not result:
         return (
             "🤔 Não consegui identificar um gasto nessa mensagem.\n\n"
