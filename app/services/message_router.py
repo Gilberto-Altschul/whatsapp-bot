@@ -17,6 +17,7 @@ Você pode me enviar:
 Comandos especiais:
 • *resumo* — ver gastos do mês
 • *semana* — ver gastos da semana
+• *mes passado* — ver gastos do mês anterior
 • *ajuda* — ver esta mensagem
 """.strip()
 
@@ -39,11 +40,13 @@ async def route_message(phone: str, msg_type: str, payload: str) -> str:
         if lower in ("resumo", "resumo do mês", "resumo do mes"):
             return await _build_summary(phone, period="month")
 
+        if lower in ("mes passado", "mês passado", "anterior"):
+            return await _build_summary(phone, period="last_month")
+
         if lower in ("semana", "essa semana", "resumo semana"):
             return await _build_summary(phone, period="week")
 
-    # ── Processar gasto por texto ──
-    if msg_type == "text":
+        # Se não cair em nenhum comando acima, processa como gasto
         return await _handle_text(phone, payload)
 
     # ── Processar gasto por áudio ──
@@ -150,10 +153,9 @@ async def _handle_image(phone: str, image_url: str) -> str:
     return (
         f"📷 *Cupom lido!*\n\n"
         f"{lines}\n"
-        f"──────────\n"
-        f"💰 *Total: R$ {total:.2f}*\n"
-        f"🛒 Categoria: Mercado\n\n"
-        f"✅ {len(items)} itens registrados!"
+        f"──────────────\n"
+        f"💰 *Total: R$ {total:.2f}* (Categorizados individualmente)\n\n"
+        f"✅ {len(items)} registros salvos com sucesso!"
     )
 
 
@@ -168,13 +170,19 @@ async def _build_summary(phone: str, period: str) -> str:
         pct = (amount / summary["total"]) * 100
         lines += f"{_category_emoji(cat)} {cat} — R$ {amount:.2f} ({pct:.0f}%)\n"
 
-    period_label = "mês" if period == "month" else "semana"
+    if period == "month":
+        period_label = "do mês"
+    elif period == "last_month":
+        period_label = "do mês passado"
+    else:
+        period_label = "da semana"
+
     alert = ""
     if summary.get("top_category"):
         alert = f"\n⚠️ Maior gasto: *{summary['top_category']}*"
 
     return (
-        f"📊 *Resumo da {period_label}:*\n\n"
+        f"📊 *Resumo {period_label}:*\n\n"
         f"{lines}"
         f"──────────\n"
         f"💸 *Total: R$ {summary['total']:.2f}*"

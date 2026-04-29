@@ -1,4 +1,4 @@
-# 🤖 Bot Financeiro WhatsApp
+,0# 🤖 Bot Financeiro WhatsApp
 
 Registre gastos pelo WhatsApp via **texto**, **áudio** ou **foto de cupom**.  
 Powered by **Gemini AI** + **Supabase** + **Twilio**.
@@ -95,6 +95,29 @@ oi
 O bot deve responder com o menu de boas-vindas. ✅
 
 ---
+
+## 🔄 Rodando em background com PM2
+
+Para manter o bot rodando permanentemente no Windows:
+
+1. Navegue até a pasta do projeto:
+   ```bash
+   cd c:\Users\gilbe\Projects\whatsapp-bot
+   ```
+2. Inicie o processo usando o arquivo de configuração:
+   ```bash
+   pm2 start ecosystem.config.js
+   ```
+3. Salve a configuração:
+   ```bash
+   pm2 save
+   ```
+
+### 🛠️ Solução: Bot parando em inatividade (Windows)
+Se o bot parar quando o notebook fica ocioso (tela bloqueada):
+1. **Energia Avançada:** No Painel de Controle, defina "Hibernar após" e "Desligar disco rígido" como **0 (Nunca)**.
+2. **Placa de Rede:** No Gerenciador de Dispositivos, desmarque "O computador pode desligar o dispositivo para economizar energia" nas propriedades da sua placa de rede/Wi-Fi.
+3. **ngrok:** Lembre-se que o ngrok precisa estar rodando em uma janela separada ou como serviço. Se o computador hibernar, o túnel do ngrok cai.
 
 ## 💬 Exemplos de uso
 

@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import PlainTextResponse
+import traceback
+from fastapi import APIRouter, Form, Request, Response
 from twilio.twiml.messaging_response import MessagingResponse
 
+from app.config import settings
 from app.services.message_router import route_message
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
 
-@router.post("/whatsapp", response_class=PlainTextResponse)
+@router.post("/whatsapp")
 async def whatsapp_webhook(
     request: Request,
     From: str = Form(...),           # ex: whatsapp:+5511999999999
+    To: str = Form(...),             # o número do bot (sandbox)
     Body: str = Form(default=""),    # texto da mensagem
     NumMedia: int = Form(default=0), # qtd de mídias (áudio ou foto)
     MediaUrl0: str = Form(default=""),
@@ -35,14 +37,22 @@ async def whatsapp_webhook(
         msg_type = "text"
         payload = Body.strip()
 
-    # Roteia para o serviço correto e obtém resposta
-    reply = await route_message(
-        phone=phone,
-        msg_type=msg_type,
-        payload=payload,
-    )
+    try:
+        # Roteia para o serviço correto e obtém resposta
+        reply = await route_message(
+            phone=phone,
+            msg_type=msg_type,
+            payload=payload,
+        )
 
-    # Monta resposta TwiML
-    response = MessagingResponse()
-    response.message(reply)
-    return str(response)
+        # Responde usando TwiML (XML) de forma que o Twilio entenda nativamente
+        twiml = MessagingResponse()
+        twiml.message(reply)
+        return Response(content=str(twiml), media_type="application/xml")
+
+    except Exception as e:
+        print("🔴 Erro crítico no Webhook:")
+        traceback.print_exc() # Imprime o erro detalhado no seu terminal
+        twiml = MessagingResponse()
+        twiml.message("Desculpe, tive um problema técnico para processar sua mensagem agora. 🛠️")
+        return Response(content=str(twiml), media_type="application/xml")

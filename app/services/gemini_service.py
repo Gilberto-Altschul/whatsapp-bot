@@ -6,12 +6,23 @@ import google.generativeai as genai
 from app.config import settings
 
 genai.configure(api_key=settings.gemini_api_key)
-model = genai.GenerativeModel("gemini-2.5-flash-lite")
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 CATEGORIES = [
     "Alimentação", "Transporte", "Mercado", "Saúde",
     "Lazer", "Moradia", "Educação", "Outros"
 ]
+
+def _parse_float(value) -> float:
+    """Limpa e converte valores para float com segurança."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        # Remove símbolos e troca vírgula por ponto
+        clean = re.sub(r'[^\d,.]', '', value).replace(',', '.')
+        try: return float(clean)
+        except ValueError: return 0.0
+    return 0.0
 
 
 # ────────────────────────────────────────────
@@ -23,6 +34,7 @@ async def classify_text(text: str) -> dict | None:
     text = text.strip()
 
     category_keywords = {
+        "Pessoal": ["vestuario", "cabelereiro", "cosmetico"],
         "Alimentação": ["pizza", "lanche", "restaurante", "café", "ifood", "padaria", "janta", "almoço"],
         "Transporte": ["uber", "99", "taxi", "gasolina", "combustivel", "ônibus", "metro", "estacionamento"],
         "Mercado": ["mercado", "supermercado", "feira", "hortifruti"],
@@ -49,9 +61,8 @@ async def classify_text(text: str) -> dict | None:
         match = re.match(pattern, text, flags=re.IGNORECASE)
         if match:
             desc = match.group("desc").strip()
-            amount = float(match.group("amount").replace(",", "."))
             return {
-                "amount": amount,
+                "amount": _parse_float(match.group("amount")),
                 "category": infer_category(desc),
                 "description": desc,
             }
@@ -75,13 +86,16 @@ Se não for um gasto claro, retorne {{"is_expense": false}}.
 """.strip()
 
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=prompt
-        )
-
-        raw = response.text.strip().replace("```json", "").replace("```", "")
-        data = json.loads(raw)
+        response = await model.generate_content_async(prompt)
+        
+        # Remove possíveis blocos de código markdown que o Gemini às vezes adiciona
+        clean_text = response.text.replace("```json", "").replace("```", "").strip()
+        
+        # Busca o conteúdo entre chaves { } de forma robusta
+        match = re.search(r"\{.*\}", clean_text, re.DOTALL)
+        if not match:
+            return None
+        data = json.loads(match.group())
 
         if not data.get("is_expense"):
             return None
@@ -95,7 +109,7 @@ Se não for um gasto claro, retorne {{"is_expense": false}}.
             category = "Outros"
 
         return {
-            "amount": float(amount),
+            "amount": _parse_float(amount),
             "category": category,
             "description": data.get("description", text[:60]),
         }
@@ -134,7 +148,7 @@ async def transcribe_audio(audio_url: str) -> str | None:
             }
         }
 
-        response = model.generate_content([audio_part, prompt])
+        response = await model.generate_content_async([audio_part, prompt])
         return response.text.strip()
 
     except Exception as e:
@@ -188,9 +202,13 @@ Se não conseguir ler, retorne {{"items": []}}.
             }
         }
 
-        response = model.generate_content([image_part, prompt])
-        raw = response.text.strip().replace("```json", "").replace("```", "")
-        data = json.loads(raw)
+        response = await model.generate_content_async([image_part, prompt])
+        
+        # Busca o conteúdo do JSON de forma robusta
+        match = re.search(r"\{.*\}", response.text, re.DOTALL)
+        if not match:
+            return None
+        data = json.loads(match.group())
 
         items = data.get("items", [])
         if not items:
@@ -199,7 +217,7 @@ Se não conseguir ler, retorne {{"items": []}}.
         return [
             {
                 "description": i.get("description", "Item"),
-                "amount": float(i.get("amount", 0)),
+                "amount": _parse_float(i.get("amount", 0)),
                 "category": i.get("category", "Outros"),
             }
             for i in items
